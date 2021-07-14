@@ -1,0 +1,109 @@
+---
+title: "Dimensionality Reduction in R"
+author: "Anoop"
+date: "14/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*What is Principal Component Analysis?*
+
+Imagine you want to create a model to analyse and predict data. You have the structure for your model ready on your mind and are ready to create it. You get your dataset and upload it...
+
+...only to find that it is pretty big with many variables. With the increase in the number of dimensions, curse-of-dimensionality seeps in making it difficult for the estimation/optimization algorithm to converge. Many of these variables are highly correlated giving rise to collinearity issues in the simple regression based models vis-a-vis affecting model fit.
+
+Feature selection is process by which one can reduce the number of feature(s) either manually or automatically by eliminating or combining them, deleting some of the variables is the crudest form of reducing the dimensionality which almost alway leads to loss of information. It would be better if there was a way to condense the dimensions/features retaining optimal information.
+
+Principal Component Analysis (PCA) is a dimensionality reduction process that can be applied to reduce the amount of features (or dimensions) from a data set while explaining maximum amount of variance in the data. PCA is based on eigenvector(s) and eigenvalue(s), which, to keep it simple are mathematical constructs representing directional-component and magnitude of the variance of the transformed feature(s) respectively. For each dimension, there is one eigenvector and eigenvalue pair that describes that dimension. We want to find the components that have the largest variance, that is, the eigenvectors that have the largest eigenvalues associated to them. These eigenvectors are mutually orthogonal, otherwise known as non-correlated or independent.
+
+Once we have the highest-variance components, we can represent our data using those instead of the original features and drop the ones with the lowest variances. This makes it so that we have few highly descriptive columns with the largest amounts of variance to differentiate our data points.
+
+**Principal Component Analysis in R**
+
+Now that you know what Principal Component Analysis is and what are its uses, we can move on to actually using it in R. For this, we are going to utilize the iris dataset, so we do not need to load any datasets into R.
+
+In R, there are a few different functions for analyzing Principal Components -- the preferred and most utilized one is prcomp. prcomp takes the dataset you want to analyze as a parameter with two optional parameters (center and scale.), which do the work of centering (shifting your data points to be zero-centered) and scaling (so your observations have unit variance) your data, which is recommended for PCA.
+
+Note that the iris dataset has a Species column, which is non-numerical. For PCA to work, we need to remove that column.
+
+```{r}
+iris_numerical <- iris[,-5]
+```
+
+```{r}
+library(scatterplot3d)
+```
+
+```{r}
+scatterplot3d(iris[,1:3],
+              main="3D Scatter Plot",
+              xlab = "Sepal Length (cm)",
+              ylab = "Sepal Width (cm)",
+              zlab = "Petal Length (cm)")
+```
+```{r}
+# Perform PCA on the numerical data from "iris"
+# prcomp does all the work of centering and scaling our data for us!
+pcaSolution <- prcomp(iris_numerical, center=TRUE, scale.=TRUE)
+
+# Print a summary of the analysis
+print(pcaSolution)
+```
+Now, we have our analysis done -- with the standard deviation and rotation (the eigenvectors!) printed out. However, we can extract even more information from our analysis by using summary. For example:
+
+```{r}
+summary(pcaSolution)
+```
+
+```
+As we can see, the first two principal components are very descriptive of our data -- together they amount for more than 95% of the variance present in our data (look at the cumulative proportion row). This is a pretty good lead that we should use them as our dimensions.
+
+However, there is another way of choosing what components are going to be used -- Scree plots and the Kaiser-Guttman rule. Scree plots are simple -- you just plot the eigenvalues for each component. It should be visible where there is a dropoff, which should be the cutoff for dimensions.
+
+```
+
+```{r}
+plot(pcaSolution, type="l", main="Eigenvalues for each Principal Component")
+```
+The Kaiser-Guttman rule states that one should pick the dimensions based on the average eigenvalue -- if a component presents a higher-than-average eigenvalue, then it should be picked. We can add this line to the Scree plot to visualize this cutoff better. Eigenvalues can be calculated as the square value of the standard deviation for a principal component, like this:
+
+```{r}
+# Calculate and print the eigenvalues for the principal components.
+# The eigenvalues are calculated by squaring the standard deviation values for each component.
+eigenvalues <- (pcaSolution$sdev)**2
+eigenvalues
+
+{
+# Plot the Scree plot.
+screePlot <- plot(pcaSolution, type="l", main="Eigenvalues with Kaiser-Guttman cutoff")
+
+# Add a cutoff line based on the mean of the eigenvalues.
+# This should be equal to one for centered and scaled data.
+abline(h=mean(eigenvalues),lty=2,col="red")
+}
+```
+In this case it appears that picking the first component, and possibly the second component seems like the correct choice. To get the actual data with the rotation applied (aligned to the component axes), you should retrieve the x column from our solution:
+
+```{r}
+# Retrieve the values of the observations for each principal component.
+rotated_values <- pcaSolution$x
+
+# Print out the first six rows of data.
+head(rotated_values)
+```
+*Visualizing the two components*
+
+```{r}
+dim(rotated_values)
+rotated_values = as.data.frame(rotated_values)
+colors = iris[,5];
+levels(colors)= c(1,2,3)
+plot(rotated_values$PC1, rotated_values$PC2, xlab="Principal component 1",
+    ylab="principal component 2", pch = 20, cex=2,
+     col=adjustcolor(colors,alpha.f=0.5))
+ legend(2,2, legend=levels(iris[,5]),pch=20,cex=0.8,col=levels(colors))
+```
+*This is the end of the "Principal Component Analysis with R" markdown. Hopefully, now you understand what Principal Component Analysis is, what it's used for and how to use it in an R environment.*
