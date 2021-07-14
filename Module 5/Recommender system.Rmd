@@ -1,0 +1,326 @@
+---
+title: "Collaborative Filtering in R"
+author: "Anoop"
+date: "15/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```
+Recommendation systems (sometimes called recommender systems) are a collection of algorithms used to recommend items to users based on information taken from the user. These systems have become ubiquitous and can commonly be seen in online stores, movies databases and job finders. In this notebook, we will explore recommendation systems based on Collaborative Filtering and implement a simple version of one using R
+
+```
+
+*Acquiring the data*
+
+```{r}
+# rating dataset
+download.file("https://ibm.box.com/shared/static/q61myoukbyz969b97ddlcq0dny0l07bf.dat", "ratings.dat")
+```
+
+```{r}
+#Movie dataset
+download.file("https://ibm.box.com/shared/static/dn84btkn9gmxmdau32c5xb0vamie6jy4.dat", "movies.dat")
+```
+
+*Preprocessing*
+
+Let's begin by loading the data into their dataframes:
+
+```{r}
+#Loading the movie information into a dataframe
+movies_df <- read.csv('movies.dat', header = FALSE, sep=":")
+
+# Head is a function that gets the first 6 rows of a dataframe
+head(movies_df)
+```
+
+```{r}
+#Loading the user information into a dataframe
+ratings_df <- read.csv('ratings.dat', header = FALSE, sep=":")
+
+# Alternatively let's look at the first 20 rows of the datatframe
+head(ratings_df, 20)
+```
+
+You can see here that there are some issues that arise when reading the data. Movies that have a colon in the title are causing additional columns to be generated, such as column 4 which contains the part of a movie's title that appears after the colon for movies with a colon in the title. We will now run some code to deal with some of these issues.
+
+Let's have a look at the raw data to see what may be causing the problem.
+
+We will do this by using the function readLines to store the raw data and using the head function to preview it.
+
+```{r}
+# Here we read the movies data again in the raw format and display the first few rows
+lines <- readLines("movies.dat")
+head(lines, 20)
+```
+
+**It would appear that for each line of the data, the information that would go into each column is separated by a double colon (::) as opposed to the single colon (:) we used for our sep value in our read.csv function call. However, the read.csv function only allows us to use single characters for our field separator character (sep) value.
+
+We can use the function gsub to replace the double colons (::) in our data with the symbol tilde (~).
+
+```{r}
+# Here we replace the sep character used in the data ("::") with one that does not appear in the data ("~")
+lines <- gsub("::", "~", lines)
+head(lines, 20)
+```
+```{r}
+# Now we recreate the movies dataframe using the updated data
+movies_df <- read.csv(text=lines, sep="~", header = FALSE)
+head(movies_df, 20)
+```
+
+So each movie has a unique ID, a title with its release year along with it and several different genres in the same field. Name the columns and then remove the year from the title column using R's handy "sub" function and then clean any trailing whitespaces.
+
+```{r}
+names(movies_df)[names(movies_df)=="V1"] = "movieId"
+names(movies_df)[names(movies_df)=="V2"] = "title"
+names(movies_df)[names(movies_df)=="V3"] = "genres"
+
+#Applying the strip function to get rid of any ending whitespace characters that may have appeared
+movies_df$title = sub("\\s+$", "", movies_df$title)
+```
+```{r}
+head(movies_df, 20)
+```
+
+With that, let's also drop the genres column since we won't need it for this particular recommendation system.
+
+```{r}
+#Dropping the genres column
+movies_df$genres = NULL
+```
+Here's the final movies dataframe:
+```{r}
+head(movies_df,20)
+```
+
+```{r}
+head(ratings_df)
+```
+
+Every row in the ratings dataframe has a user id associated with at least one movie, a rating and a timestamp showing when they reviewed it. Let's name the columns accordingly and drop the timestamp column since we won't be using it for this type of recommendation.
+
+```{r}
+#Removing the Empty Column Ex: V2, V4, V6 using subset function.
+#These columns were generated because the data is separated by "::" while the read.csv function only accepts single characters
+#for the sep value  such as ":" or "~", thus the read function assumed that our data was separated by single colons (":").
+ratings_df <- subset( ratings_df, select = -c(V2, V4, V6 ))
+
+head(ratings_df)
+```
+
+Lets name the columns in rating_df as follows:
+
+V1 as userId
+V3 as movieId
+V5 as rating
+V7 as timestamp
+Remove Column timestamp
+
+```{r}
+names(ratings_df)[names(ratings_df)=="V1"] = "userId"
+names(ratings_df)[names(ratings_df)=="V3"] = "movieId"
+names(ratings_df)[names(ratings_df)=="V5"] = "rating"
+names(ratings_df)[names(ratings_df)=="V7"] = "timestamp"
+ratings_df$timestamp = NULL
+
+# Here's how the final ratings Dataframe looks like:
+head(ratings_df)
+```
+
+*Collaborative Filtering*
+
+Now, time to start our work on recommendation systems.
+
+The first technique we're going to take a look at is called Collaborative Filtering, which is also known as User-User Filtering. As hinted by its alternate name, this technique uses other users data to recommend items to the input user. It attempts to find users that have similar preferences and opinions as the input and then recommends items that they have liked to the input. There are several methods of finding similar users (Even some making use of Machine Learning), and the one we will be using here is going to be based on the Pearson Correlation Function.
+
+The process for creating a User Based recommendation system is as follows:
+
+Select a user with the movies the user has watched
+Based on his rating to movies, find the top X neighbours
+Get the watched movie record of the user for each neighbour.
+Calculate a similarity score using some formula
+Recommend the items with the highest score
+Let's begin by creating an input user to recommend movies to:
+
+Notice: To add more movies, simply increase the amount of elements in the userInput. Feel free to add more in! Just be sure to write it in with capital letters and if a movie starts with a "The", like "The Matrix" then write it in like this: 'Matrix, The' .
+
+```{r}
+inputUser = data.frame("title"=c("Breakfast Club, The (1985)", "Toy Story (1995)", "Jumanji (1995)", "Pulp Fiction (1994)", "Akira (1988)"), 
+                       "rating"=c(5, 3.5, 2, 5, 4.5))
+head(inputUser)
+```
+
+*Adding movieIds to the input user*
+
+With the input complete, let's extract the input movies's ID's from the movies dataframe and add them into it.
+
+We can achieve this by first filtering out the rows that contain the input movies' titles and getting their IDs.
+
+```{r}
+inputUser$movieId = rep(NA, length(inputUser$title))
+for (i in 1:length(inputUser$title)){
+    inputUser$movieId[i] = as.character(movies_df$movieId[movies_df$title == inputUser$title[i]])
+}
+head(inputUser)
+```
+
+*The users who have seen the same movies*
+
+Now with the movie IDs in our input, we can now get the subset of users who have watched and reviewed the movies that our input user has seen.
+
+```{r}
+#Filtering out users that have watched movies that the input has watched and storing it
+userSubset = ratings_df[ratings_df$movieId %in% inputUser$movieId,]
+head(userSubset)
+```
+
+With every user extracted, let's sort them by the amount of movies that they have in common with the input and get the first 100 of them.
+
+```{r}
+top100 <- head(sort(table(factor(userSubset$userId)), decreasing = TRUE), 100)
+```
+```{r}
+head(top100)
+```
+Now let's extract the userIDs from the table and transform it into a table to make it easier to subset the data later on.
+
+```{r}
+userList <- as.data.frame.table(top100)
+colnames(userList) <-  c("userId","commonMovies")
+head(userList)
+```
+
+Now let's get the movies watched by these 100 users from the ratings dataframe and then create the UserSubset data frame (using merge function to combine the columns)
+
+```{r}
+userSubset = ratings_df[ratings_df$userId %in% userList$userId,]
+temp = as.data.frame(table(userSubset$movieId))
+names(temp)[names(temp)=="Var1"] = "movieId"
+userSubset = merge(temp, userSubset)
+```
+
+This is what our final userSubset dataframe looks like:
+
+```{r}
+head(userSubset)
+```
+
+Let's look at one of the users, e.g. the one with userID 533.
+
+```{r}
+head(userSubset[userSubset$userId == 533,])
+```
+
+Now let's filter out the movies with less than 10 occurrences in our dataframe:
+
+```{r}
+userSubset = userSubset[userSubset$Freq > 10,]
+head(userSubset)
+```
+
+*Similarity of users to input user*
+
+Next, we are going to compare the top users to our specified user and find the one that is most similar.
+we're going to find out how similar each user is to the input user through the Pearson Correlation Coefficient. It is used to measure the strength of the linear association between two variables.
+
+```{r}
+pearson_df = data.frame("userId"=integer(), "similarityIndex"=double())
+for (user in userList$userId)
+{
+    userRating = userSubset[userSubset$userId == user,]
+    
+    moviesInCommonX = userRating[userRating$movieId %in% inputUser$movieId,]
+    moviesInCommonX = moviesInCommonX[complete.cases(moviesInCommonX),]
+    
+    moviesInCommonY = inputUser[inputUser$movieId %in% userRating$movieId,]
+    moviesInCommonY = moviesInCommonY[complete.cases(moviesInCommonY),]
+    
+    #Now let's calculate the pearson correlation between two users, so called, x and y
+    Sxx = sum(moviesInCommonX$rating^2) - (sum(moviesInCommonX$rating)^2)/nrow(moviesInCommonX)
+    Syy = sum(moviesInCommonY$rating^2) - (sum(moviesInCommonY$rating)^2)/nrow(moviesInCommonY)
+    Sxy = sum(moviesInCommonX$rating*moviesInCommonY$rating) - (sum(moviesInCommonX$rating)*sum(moviesInCommonY$rating))/nrow(moviesInCommonX)
+    
+    
+    if(Sxx == 0 | Syy == 0 | Sxy == 0)
+    {
+        pearsonCorrelation = 0
+    }
+    else
+    {
+        pearsonCorrelation = Sxy/sqrt(Sxx*Syy)
+    }
+    
+    pearson_df = rbind(pearson_df, data.frame("userId"=user, "similarityIndex"=pearsonCorrelation))   
+}
+```
+
+*Here's a look at the similarity scores:*
+
+```{r}
+head(pearson_df)
+```
+
+*The top x similar users to input user*
+
+Now let's get the top 50 users that are most similar to the input.
+
+Now, let's start recommending movies to the input user.
+
+*Rating of selected users to all movies*
+
+We're going to do this by taking the weighted average of the ratings of the movies using the Pearson Correlation as the weight. But to do this, we first need to get the movies watched by the users in our pearsonDF from the ratings dataframe and then store their correlation in a new column called _similarityIndex". This is achieved below by merging of these two tables.
+
+```{r}
+topUsersRating = merge(userSubset, pearson_df)
+head(topUsersRating, 15)
+```
+
+Now all we need to do is simply multiply the movie rating by its weight (The similarity index), then sum up the new ratings and divide it by the sum of the weights.
+
+We can easily do this by simply multiplying two columns, then taking the mean of the aggregate of the movieId column:
+
+```{r}
+#Multiplies the similarity by the user's ratings
+topUsersRating$weightedRating = topUsersRating$similarityIndex*topUsersRating$rating
+weightedAverage_df = aggregate(topUsersRating$weightedRating, list(topUsersRating$movieId), mean)
+head(weightedAverage_df)
+```
+
+```{r}
+names(weightedAverage_df)[names(weightedAverage_df)=="Group.1"] = "movieId"
+names(weightedAverage_df)[names(weightedAverage_df)=="x"] = "weightedAverage"
+head(weightedAverage_df)
+```
+
+*Now we merge the averages with the movies dataframe so we can get their titles.*
+
+```{r}
+recommendation_df = merge(weightedAverage_df, movies_df)
+```
+
+*And then we finally sort it to see the top 20 movies that the algorithm recommended!*
+
+```{r}
+head(recommendation_df[order(-recommendation_df$weightedAverage),], 20)
+```
+
+*Conclusion*
+
+Advantages and Disadvantages of collaborative filtering:
+
+*Advantages*
+
+Takes other user's ratings into consideration
+Doesn't need to study or extract information from the recommended item
+Adapts to the user's interests which might change over time
+
+*Disadvantages*
+
+Approximation function can be slow
+There might be a low of amount of users to approximate
+Privacy issues when trying to learn the user's preferences
