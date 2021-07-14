@@ -1,0 +1,140 @@
+---
+title: "Linear Regression in R"
+author: "Anoop"
+date: "14/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*The work of a data scientist goes way beyond performing basic tasks such as analyzing and visualizing data. Now, I will explore another exciting tool of data analysis: predictions and estimates*
+
+***Get to know that data***
+
+This data corresponds to **the percentage of the population with access to improved sanitation facilities** and **life expectancy (in years)** in 2014 for 183 countries in the world. It was extracted from [The World Bank](http://data.worldbank.org/) website and pre-processed to eliminate NAs and other issues.
+
+Here, we examine two variables: Access to Sanitation and Life Expectancy.
+
+*Import the Dataset*
+
+```{r}
+my_data <- read.csv("https://ibm.box.com/shared/static/q0gt7rsj6z5p3fld163n70i65id3awz3.csv")
+
+```
+
+*Explore that Data*
+
+```{r}
+head(my_data)
+str(my_data)
+```
+
+```
+Just like I mentioned before, it looks like the dataframe contains 183 observations of 3 variables: Country Name, Access to Sanitation Facilities (in % of population) and Life Expectancy (in years).
+
+```
+
+*Visualizing the Data***
+
+```{r}
+plot(my_data$Access_to_Sanitation, my_data$Life_Expectancy, xlab = "Access to Sanitation (% of population)",
+     ylab = "Life Expectancy (years)", col = "aquamarine4", lwd = 2)
+```
+
+```
+What if we compare the values of each country for these two variables?
+
+Here, we'll just make a simple bar plot to see what are the bottom 20 countries for Sanitation and Life Expectancy, respectively.
+
+You can use the function order() to sort the data.
+
+```
+```{r}
+my_data <- my_data[order(my_data["Access_to_Sanitation"]),]
+
+barplot(my_data[c(1:20),"Access_to_Sanitation"],
+        names.arg = as.vector(my_data[c(1:20),"Country"]),
+        col = "rosybrown", las = 2,
+       ylab = "Access to Sanintation (% of Population)")
+```
+```{r}
+# Order rows increasingly by Life Expectancy
+my_data <- my_data[order(my_data["Life_Expectancy"]),]
+
+barplot(my_data[c(1:20),"Life_Expectancy"],
+        names.arg = as.vector(my_data[c(1:20),"Country"]),
+        col = "cadetblue", las = 2,
+       ylab = "Life Expectancy (years)")
+```
+*Building a Linear Model*
+
+```
+Looking at the plots, were you able to identify any trends? Is there a relationship between Access to Sanitation and Life Expectancy? If so, which is the independent (explanatory) variable and which is the dependent (outcome) variable?
+
+Since access to sanitation is likely to affect one's life expectancy, in our linear model, Access to Sanitation is our independent variable and Life Expectancy is our dependent variable.
+
+```
+
+*Creating the Model*
+
+```{r}
+# Create a vector containing the sanitation data
+sanitation <- as.vector(my_data$Access_to_Sanitation)
+
+# Build a linear model
+model <- lm(Life_Expectancy ~ sanitation, data=my_data)
+
+# Get some information about the model
+summary(model)
+model
+```
+```{r}
+{
+# Plot the previous scatter plot
+plot(my_data$Access_to_Sanitation, my_data$Life_Expectancy, xlab = "Access to Sanitation (% of Population)",
+     ylab = "Life Expectancy (years)", col = "blue", lwd = 2)
+
+# Fit a line in the plot
+abline(model, col = "red")
+}
+```
+*Using the model for Estimations/Predictions*
+
+Now that we have a model, we can estimate the Life Expectancy for a given value of Access to Sanitation Facilities that isn't in the dataset. For this, we can use the function predict() and our linear model.
+
+```{r}
+# Tips: using point that fall out of the term interval in the training dataset may lead to errors of prediction that are much larger than expected. 
+summary(my_data$Access_to_Sanitation)
+```
+
+```{r}
+# Create points to predict, use the point that fall between 6.70 and 100.00
+pointsToPredict <- data.frame(sanitation = c(10, 42))
+
+#Use predict() to compute our predictions!
+predictionWithInterval <- predict(model, pointsToPredict, interval = 'prediction')
+predictionWithInterval
+
+```
+*Let's add our estimations to the previous plot!*
+
+```{r}
+{
+# Plot the previous scatter plot
+plot(my_data$Access_to_Sanitation, my_data$Life_Expectancy, xlab = "Access to Sanitation (% of Population)",
+     ylab = "Life Expectancy (years)", col = "blue", ylim=c(45, 85), lwd = 2)
+    
+# Add the new predicted points!
+points(pointsToPredict$sanitation, predictionWithInterval[,"fit"], col = "red", lwd = 4)
+points(pointsToPredict$sanitation, predictionWithInterval[,"lwr"], col = "firebrick4", lwd = 4)
+points(pointsToPredict$sanitation, predictionWithInterval[,"upr"], col = "firebrick4", lwd = 4)
+    
+legend("topleft",legend = c("Dataset Points", "Prediction Points"), fill = c("blue","red"), bty = "n")
+    
+# Fit a line in the plot
+abline(model, col = "red")
+}
+```
+*END*
