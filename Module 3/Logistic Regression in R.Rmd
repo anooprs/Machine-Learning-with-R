@@ -1,0 +1,255 @@
+---
+title: "Logistic Regression in R"
+author: "Anoop"
+date: "14/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```
+*What is different between Linear and Logistic Regression?*
+
+While Linear Regression is suited for estimating continuous values (e.g. estimating house price), it isn’t the best tool for predicting the class of an observed data point. In order to estimate a classification, we need some sort of guidance on what would be the most probable class for that data point. For this, we use Logistic Regression.
+
+```
+
+```
+ogistic Regression is a variation of Linear Regression, useful when the observed dependent variable, y, is categorical. It produces a formula that predicts the probability of the class label as a function of the independent variables.
+
+Despite the name logistic regression, it is actually a probabilistic classification model. Logistic regression fits a special s-shaped curve by taking the linear regression and transforming the numeric estimate into a probability with the following function:
+
+𝑃𝑟𝑜𝑏𝑎𝑏𝑖𝑙𝑖𝑡𝑦𝑂𝑓𝑎𝐶𝑙𝑎𝑠𝑠=𝜃(𝑦)=𝑒𝑦1+𝑒𝑦=𝑒𝑥𝑝(𝑦)/(1+𝑒𝑥𝑝(𝑦))=𝑝
+ 
+which produces p-values between 0 (as y approaches minus infinity) and 1 (as y approaches plus infinity). This now becomes a special kind of non-linear regression.
+
+In this equation, y is the regression result (the sum of the variables weighted by the coefficients), exp is the exponential function and  𝜃(𝑦)  is the logistic function, also called logistic curve. It is a common "S" shape (sigmoid curve), and was first developed for modelling population growth.
+
+You might also have seen this function before, in another configuration:
+
+𝑃𝑟𝑜𝑏𝑎𝑏𝑖𝑙𝑖𝑡𝑦𝑂𝑓𝑎𝐶𝑙𝑎𝑠𝑠=𝜃(𝑦)=11+𝑒−𝑥
+ 
+So, briefly, Logistic Regression passes the input through the logistic/sigmoid but then treats the result as a probability:
+
+<img src="https://ibm.box.com/shared/static/kgv9alcghmjcv97op4d6onkyxevk23b1.png", width = "400", align = "center">
+
+```
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+library(VGAM)
+library(class)
+
+```
+*About Dataset*
+
+Loan_status: Whether a loan is paid off on in collection
+
+Principal: Basic principal loan amount at the
+
+Originationterms Can be weekly (7 days), biweekly, and monthly payoff schedule
+
+Effective_date: When the loan got originated and took effects
+
+Due_date: Since it’s one-time payoff schedule, each loan has one single due date
+
+age:age education: education gender:
+
+```{r}
+download.file("https://ibm.box.com/shared/static/sv3oy0gyhuiifmosxsvxt5ogfs71iv37.csv",
+              destfile = "LoanData.csv", quiet = TRUE)
+options(scipen = 999) #disable scientific notation
+```
+
+**Load Data from CSV file**
+
+```{r}
+LoanData <- read.csv("LoanData.csv")
+head(LoanData)
+```
+
+*How many rows, columns in total?*
+```{r}
+nrow(LoanData)
+ncol(LoanData)
+```
+*Data Visualization And Analysis*
+
+```{r}
+table(LoanData['loan_status'])
+```
+**300 people have paid off the loan on time and 100 have gone into collection**
+
+*Lets plot a Histogram of data*
+
+For different principal:
+
+```{r}
+ggplot(LoanData, aes(x=Principal, fill=loan_status)) +geom_histogram(binwidth=120,alpha=0.35,aes(y=0.5*..density..),position='identity')
+```
+For different terms:
+
+```{r}
+ggplot(LoanData, aes(x=terms, fill=loan_status)) +geom_histogram(binwidth=10,alpha=0.45,aes(y=1*..density..),position='identity')+scale_x_continuous(limits = c(0, 40))
+```
+For different age:
+
+```{r}
+ggplot(LoanData, aes(x=age, fill=loan_status)) +geom_histogram(binwidth=1,alpha=0.55,aes(y=1*..density..),position='identity')+scale_x_continuous(limits = c(0, 40))
+```
+
+*Let's examine the variables in two dimensions*
+
+```{r}
+hist_top <-ggplot(LoanData, aes(x=Principal, fill=loan_status)) +geom_histogram(binwidth=100,alpha=0.55,aes(y=1*..density..),position='identity')+ theme(legend.position="none")+scale_x_continuous(limits = c(200, 1100))
+
+empty <- ggplot()+geom_point(aes(1,1), colour="white")+
+         theme(axis.ticks=element_blank(), 
+               panel.background=element_blank(), 
+               axis.text.x=element_blank(), axis.text.y=element_blank(),           
+               axis.title.x=element_blank(), axis.title.y=element_blank())
+
+#qplot(Principal, age, data = LoanData, colour = loan_status)
+scatter <-ggplot(LoanData, aes(Principal, age),fill= loan_status)  + geom_point(aes(colour = loan_status))+ theme(legend.position="top")
+
+hist_right <-ggplot(LoanData, aes(x=age, fill=loan_status))+scale_x_continuous(limits = c(20, 45)) +geom_histogram(binwidth=1,alpha=0.55,aes(y=0.5*..density..),position='identity')+coord_flip()+ theme(legend.position="none")
+
+
+grid.arrange(hist_top, empty, scatter, hist_right, ncol=2, nrow=2, widths=c(4, 1), heights=c(1, 4))
+```
+
+*Pre-processing: Feature selection/extraction*
+
+```{r}
+ggplot(LoanData, aes(x=dayofweek, fill=loan_status))  +geom_histogram(binwidth=1,alpha=0.55,aes(y=1*..density..),position='identity')+scale_x_continuous(limits = c(0, 7))
+```
+**We see that people who get the loan at the end of the week dont pay it off, so lets use Feature binarization to set a threshold values less then day 4**
+
+**Converting days of the week to categorical value**
+
+Create empty vector for indicator variable, Then, Set all values over the 3 day equal to one, else keep them at zero.
+
+```{r}
+namevector <- c("Weekend")
+LoanData[,namevector] <- 0
+LoanData$Weekend[LoanData$dayofweek>3]<-1
+head(LoanData)
+```
+
+*Encoding one categorical feature*
+
+```{r}
+namevector <- c("Gender01")
+LoanData[,namevector] <- 0
+LoanData$Gender01[LoanData$Gender=='male']=1
+head(LoanData[,c('Gender','Gender01')])
+
+```
+
+```{r}
+table(LoanData$Gender01, LoanData$loan_status)
+```
+
+```{r}
+ggplot(LoanData, aes(x=Gender01, fill=loan_status))  +geom_histogram(binwidth=1,alpha=0.55,aes(y=1*..density..),position='identity')+scale_x_continuous(limits = c(0, 2))
+```
+**As we can see, 84 % of female pay there loans while ony 73 % of males pay there loan**
+
+*Convert Multiple Categorical Features Using One Hot Encoding*
+
+```
+Some variables, such as Education, have multiple value, and we have to use __ one-hot encoding__ technique to discretize them, therefore, we use dummies library.
+
+```
+
+```{r}
+library(dummies)
+```
+
+Feature before one hot encoding:
+
+```{r}
+head(LoanData['education'])
+```
+
+Use one hot encoding technique to convert categorical variables to binary variables and append them to the feature Data Frame
+
+```{r}
+LoanData=dummy.data.frame(LoanData, names=c("education"))
+head(LoanData[c('educationBechalor', 'educationcollege',  'educationHigh School or Below','educationMaster or Above')])
+```
+**Assembling the features**
+
+```{r}
+Colunms <- c('Principal','terms','age','educationBechalor', 'educationcollege',  'educationHigh School or Below','educationMaster or Above','Weekend','Gender01')
+Data <- LoanData[Colunms]
+head(Data)
+```
+
+Let's put all the labels in the data frame y
+
+```{r}
+NewColumn <- c("Class")
+Data[,NewColumn] <- 0
+Data$Class[LoanData$loan_status=='PAIDOFF']=1
+head(Data[,NewColumn],10)
+head(LoanData$loan_status,10)
+```
+**Normalize Data**
+
+Data Standardization give data zero mean and unit variance (technically should be done after train test split )
+
+```{r}
+Data[Colunms] <- scale(Data[Colunms])
+head(Data[Colunms])
+```
+
+*Train Test Split*
+
+```{r}
+set.seed(3)
+
+testindex <- sample.int(nrow(Data))[1:floor(0.1*nrow(Data))]
+TestData <- Data[testindex,];
+head(TestData)
+TrainData=Data[-testindex,]
+head(TrainData)
+```
+*Logistic Regression*
+
+```{r}
+model <- glm(Class~.,family=binomial(link='logit'),data=TrainData, control = list(maxit = 50))
+summary(model)
+```
+*Prediction*
+
+```{r}
+fitted.results <- predict(model,newdata=TestData,type='response')
+yhat <- ifelse(fitted.results > 0.5,1,0)
+yhat[1:5]
+```
+**Let's get the actual labels**
+
+```{r}
+y <- TestData[,c('Class')]
+y[1:4]
+```
+*Model Evaluation*
+
+Let's calculate the accuracy:
+
+```{r}
+mean(yhat==y)
+```
+
+*Confusion Matrix*
+
+```{r}
+ConfusionMatrix<- table(paste(as.character(yhat)," pred", sep =""), paste(as.character(y)," true", sep =""))
+ConfusionMatrix
+```
+
+*END*
